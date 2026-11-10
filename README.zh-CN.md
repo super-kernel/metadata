@@ -4,7 +4,7 @@
 
 # SuperKernel Metadata
 
-`super-kernel/metadata` 还原 `skernel build` 为 SuperKernel 项目生成的包元数据：根包与已安装的包、它们的环境要求以及类映射。它只读取生成的文件，因此应用启动时既不读取 Composer 文件也不扫描源码，项目移动后以及在 Phar 内同样适用。
+`super-kernel/metadata` 恢复 `skernel build` 为项目生成的包元数据：根包和已安装的包、它们的环境要求以及它们的类映射，使应用启动时无需读取 Composer 文件或扫描源码。
 
 ## 安装
 
@@ -12,76 +12,106 @@
 composer require super-kernel/metadata
 ```
 
-本包需要 8.4 系列中 8.4.27 及以上版本的 PHP，并要求项目通过 Composer 安装、由其 `vendor/autoload.php` 加载本包。它还原的元数据只有在项目中运行过 `skernel build` 后才存在。
+本包需要一个用 Composer 安装、由其 `vendor/autoload.php` 加载本包的项目。它恢复的元数据只有在项目中运行过 `skernel build` 之后才存在。
 
-## 提供的内容
+## 提供的能力
 
-| 声明                                           | 用途                                                                                                            |
-|------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
-| `Provider\VendorDirProvider`                   | 提供 `SuperKernel\Contract\VendorDirInterface`：加载本包的 Composer 类加载器所属的 vendor 目录。                 |
-| `Provider\BasePathProvider`                    | 提供 `SuperKernel\Contract\BasePathInterface`：构建时记录的项目目录，相对 vendor 目录解析。                      |
-| `Provider\PackageManagerProvider`              | 提供从生成记录还原的 `SuperKernel\Contract\PackageManagerInterface`。                                            |
-| `Exception\BuildRequiredException`             | 生成的元数据缺失、无效或过期时抛出；其消息以 ``Run `skernel build` to generate the project metadata.`` 结尾。      |
-| `Build\MetadataPublisher`                      | 写入元数据；SKERNEL 在 `skernel build` 期间于项目自身的进程中调用它。                                            |
-| `Constants\Protocol::VERSION`                  | 本版本读写的构建协议；SKERNEL 只构建协议与其支持版本一致的项目。                                                 |
+- 加载本包的 Composer 类加载器所对应的依赖目录（vendor 目录），在项目移动之后以及在 Phar 中同样适用。
+- 构建时记录的项目目录。
+- 根包和已安装的包，以及它们的版本、引用、Composer 类型和环境要求。
+- 拥有某个类的包，以及每个包的类映射。
+- 检测缺失、损坏或比项目的 `composer.lock` 更旧的元数据。
+- `skernel build` 调用来写出元数据的发布器。
 
-三个提供者都带有 `FactoryProvider` Attribute，因此 SuperKernel 容器通过它们解析这些共享接口。还原出的包实现 `SuperKernel\Contract\PackageMetadataInterface`，并额外提供 `composerType()` 和 `environmentRequirements()`。
+它不会：
 
-它不读取 `composer.json` 或 `composer.lock` 的内容，不扫描类文件，不注册自动加载器，也不包含 Composer 的 `files` 自动加载文件；这些仍由 Composer 的 `vendor/autoload.php` 负责。
+- 读取 `composer.json` 或 `composer.lock` 的内容，或扫描类文件；
+- 注册自动加载器或引入 Composer 的 `files` 自动加载文件，这些仍由 `vendor/autoload.php` 完成；
+- 重新构建过期的元数据，这由 `skernel build` 负责。
 
-## 示例
+## 快速开始
+
+项目中的任何类都可以用来查找它所属的包。将一个类保存为 `src/Billing/Invoice.php`：
 
 ```php
 <?php
 
 declare(strict_types=1);
 
+namespace Src\Billing;
+
+final class Invoice
+{
+}
+```
+
+恢复元数据，并查询哪个包拥有哪个类。将脚本保存为 `bin/packages.php`：
+
+```php
+<?php
+
+declare(strict_types=1);
+
+use Src\Billing\Invoice;
 use SuperKernel\Metadata\Provider\BasePathProvider;
 use SuperKernel\Metadata\Provider\PackageManagerProvider;
 use SuperKernel\Metadata\Provider\VendorDirProvider;
 
-require __DIR__ . '/vendor/autoload.php';
+require dirname(__DIR__) . '/vendor/autoload.php';
 
 $vendorDir = new VendorDirProvider()();
 $basePath = new BasePathProvider()($vendorDir);
 $packages = new PackageManagerProvider()($vendorDir, $basePath);
 
-foreach ($packages->all() as $package) {
-    echo $package->name(), ' ', $package->version() ?? '(root)', PHP_EOL;
-}
-
-echo $packages->packageForClass(App\Kernel::class)?->name() ?? 'not discovered', PHP_EOL;
+echo $packages->packageForClass(VendorDirProvider::class)?->name(), PHP_EOL;
+echo $packages->root()->composerType(), PHP_EOL;
+var_dump($packages->packageForClass(Invoice::class) === $packages->root());
+var_dump($packages->root()->locatedPath() === (string) $basePath);
 ```
 
-## 生成的文件
+构建项目并运行脚本：
 
-`skernel build` 在 vendor 目录下写入以下文件。请将它们与项目的 `composer.lock` 一同随应用发布；`skernel package` 会这样做。
-
-| 文件                  | 内容                                                                                            |
-|-----------------------|-------------------------------------------------------------------------------------------------|
-| `.cache/build.json`   | 构建戳：构建协议、SKERNEL 版本、`composer.lock` 的 SHA-256，以及项目目录相对 vendor 目录的路径。   |
-| `.cache/metadata.ser` | 每个包及其类映射，路径相对项目目录和 vendor 目录存储。                                           |
-
-构建戳示例：
-
-```json
-{
-    "protocol": 1,
-    "skernel": "1.0.0-alpha.2",
-    "lock": "3f9c5d0e6a1b2c4d8e7f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5",
-    "base-path": ".."
-}
+```bash
+skernel build
+php bin/packages.php
 ```
 
-## 可观察行为
+它会打印：
 
-- 当 `build.json` 或 `metadata.ser` 缺失或损坏、构建戳由其他构建协议写入、项目没有可读的 `composer.lock`，或 `composer.lock` 在构建后发生变化时，`PackageManagerProvider` 抛出 `BuildRequiredException`。在 `composer install`、`composer update` 之后，或自动加载规则、带注解的类发生任何变化之后，请重新运行 `skernel build`。
-- 构建戳缺失、无效或属于其他协议时，`BasePathProvider` 抛出 `BuildRequiredException`。
-- 没有任何已注册的 Composer 类加载器加载本包时，`VendorDirProvider` 抛出 `Exception\MetadataException`。
-- 在不改变 `composer.lock` 的情况下于 `composer install` 与 `composer install --no-dev` 之间切换不会被检测到；切换后请重新构建。
-- 还原过程只读。每次调用提供者都返回新的值；容器为每个接口保留一个实例。
-- 当 vendor 目录位于项目内部时，项目与其 vendor 目录可以一起移动而元数据保持有效；在 Phar 内，路径以 `phar://` 开头。vendor 目录位于项目之外时，项目目录以绝对路径记录。
+```text
+super-kernel/metadata
+project
+bool(true)
+bool(true)
+```
+
+## 公开接口
+
+| 名称 | 类别 | 用途 |
+| --- | --- | --- |
+| `SuperKernel\Metadata\Provider\VendorDirProvider` | 类 | 提供 `VendorDirInterface`：加载本包的 Composer 类加载器所对应的依赖目录。 |
+| `SuperKernel\Contract\VendorDirInterface` | 接口 | 依赖目录；转换为字符串即得到路径。 |
+| `SuperKernel\Metadata\Provider\BasePathProvider` | 类 | 提供 `BasePathInterface`：构建时记录的项目目录。 |
+| `SuperKernel\Contract\BasePathInterface` | 接口 | 项目目录；转换为字符串即得到路径。 |
+| `SuperKernel\Metadata\Provider\PackageManagerProvider` | 类 | 提供从生成的元数据恢复的 `PackageManagerInterface`。 |
+| `SuperKernel\Contract\PackageManagerInterface` | 接口 | 列出所有包，并按名称、Composer 类型或其中的某个类查找包。 |
+| `SuperKernel\Contract\PackageMetadataInterface` | 接口 | 一个包：名称、版本、引用和所在路径。 |
+| `SuperKernel\Contract\EnvironmentRequirementInterface` | 接口 | 对某个 Composer 平台包（例如 PHP 或扩展）的一项要求，以及声明它的包。 |
+| `SuperKernel\Metadata\Build\MetadataPublisher` | 类 | 写出元数据；`skernel build` 在项目自己的进程中调用它。 |
+| `SuperKernel\Metadata\Constants\Protocol` | 类 | `VERSION` 是本版本读写的构建协议。 |
+
+## 需要了解的行为
+
+- 在 `composer install` 或 `composer update` 之后，以及修改自动加载规则或带注解的类之后，请运行 `skernel build`，或者用会先构建的 `skernel run` 启动。在 `composer.lock` 不变的情况下于 `composer install` 和 `composer install --no-dev` 之间切换不会被检测到；切换之后请重新构建。
+- 当元数据缺失或无效、在另一个构建协议下写出，或者与当前的 `composer.lock` 不一致时，`PackageManagerProvider` 和 `BasePathProvider` 抛出 `SuperKernel\Metadata\Exception\BuildRequiredException`。其消息说明问题所在，并以 ``Run `skernel build` to generate the project metadata.`` 结尾。
+- 当没有任何 Composer 类加载器加载本包时，`VendorDirProvider` 抛出 `SuperKernel\Metadata\Exception\MetadataException`，消息为 `No registered Composer class loader serves super-kernel/metadata.`。
+- 每次调用提供者都返回一个新值；SuperKernel 容器为每个接口保留一个实例。
+- 依赖目录位于项目之内时，项目可以连同其依赖目录一起移动，元数据依然有效。
+
+## 文档
+
+开发者文档用完整示例介绍每一种查找、生成的文件及其分发方式、元数据的发布，以及各种错误及其消息：[SuperKernel Metadata](https://github.com/super-kernel/.github/blob/main/docs/components/metadata.zh-CN.md)。
 
 ## 许可证
 
-基于 MIT 许可证发布。详见 [LICENSE](LICENSE)。
+基于 MIT 许可证发布，详见 [LICENSE](LICENSE)。
