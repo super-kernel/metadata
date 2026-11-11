@@ -4,7 +4,7 @@
 
 # SuperKernel Metadata
 
-`super-kernel/metadata` restores the package metadata that `skernel build` generates for a project: the root and installed packages, their environment requirements, and their class maps, so an application starts without reading Composer files or scanning sources.
+`super-kernel/metadata` restores the package metadata that `skernel build` generates for a project: the root and installed packages, their environment requirements, and their class maps, so an application starts without parsing Composer files or scanning sources.
 
 ## Installation
 
@@ -25,7 +25,7 @@ The package needs a project installed with Composer, whose `vendor/autoload.php`
 
 It does not:
 
-- read the contents of `composer.json` or `composer.lock`, or scan class files;
+- parse `composer.json` or `composer.lock`, or scan class files;
 - register an autoloader or include Composer `files` autoloads; `vendor/autoload.php` keeps doing that;
 - rebuild outdated metadata; `skernel build` does.
 

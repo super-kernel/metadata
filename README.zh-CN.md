@@ -4,7 +4,7 @@
 
 # SuperKernel Metadata
 
-`super-kernel/metadata` 恢复 `skernel build` 为项目生成的包元数据：根包和已安装的包、它们的环境要求以及它们的类映射，使应用启动时无需读取 Composer 文件或扫描源码。
+`super-kernel/metadata` 恢复 `skernel build` 为项目生成的包元数据：根包和已安装的包、它们的环境要求以及它们的类映射，使应用启动时无需解析 Composer 文件或扫描源码。
 
 ## 安装
 
@@ -25,7 +25,7 @@ composer require super-kernel/metadata
 
 它不会：
 
-- 读取 `composer.json` 或 `composer.lock` 的内容，或扫描类文件；
+- 解析 `composer.json` 或 `composer.lock`，或扫描类文件；
 - 注册自动加载器或引入 Composer 的 `files` 自动加载文件，这些仍由 `vendor/autoload.php` 完成；
 - 重新构建过期的元数据，这由 `skernel build` 负责。
 
